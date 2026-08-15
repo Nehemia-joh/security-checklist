@@ -42,6 +42,24 @@ A comprehensive security framework for AI application development, incorporating
   - Implement principle of least privilege across all services
   - Rotate credentials regularly
 
+### [ ] Restrict Database Permissions
+- **Description**: Implement least-privilege database access with granular role-based permissions.
+- **Severity**: CRITICAL
+- **OWASP**: 01 - Broken Access Control
+- **Implementation**:
+  - Create separate roles: read-only, read-write, admin
+  - Grant SELECT only for read-only role
+  - Grant INSERT/UPDATE/DELETE only where necessary
+  - Revoke ALTER and DROP permissions from application role
+  - Use database users (not superuser) for applications
+  - Disable root/admin access from application servers
+  - Implement row-level security (RLS) per tenant
+  - Audit database permission assignments
+  - Test privilege escalation attempts
+  - Log all privilege changes
+  - Monitor failed access attempts
+  - Use separate credentials for different services
+
 ### [ ] Enable Row-Level Security (RLS) / Row Security Policies
 - **Description**: Enforce database-level access control so users can only see their own data even if they bypass application logic.
 - **Severity**: CRITICAL
@@ -89,6 +107,33 @@ A comprehensive security framework for AI application development, incorporating
   - Max-Age: Set appropriate session duration
   - Path=/: Limit to root path
 
+### [ ] Reset Sessions on Password Change
+- **Description**: Invalidate all active sessions when a user changes their password. Force re-authentication.
+- **Severity**: CRITICAL
+- **OWASP**: 01 - Broken Access Control
+- **Implementation**:
+  - Clear all active tokens/sessions for the user
+  - Revoke refresh tokens
+  - Force logout from all devices
+  - Send notification of logout to user
+  - Log the password change event
+  - Send confirmation email of security event
+  - Prevent account access until user re-authenticates
+
+### [ ] Lock Accounts After Failed Logins
+- **Description**: Temporarily lock account after repeated failed login attempts to prevent brute force attacks.
+- **Severity**: CRITICAL
+- **OWASP**: 07 - Identification and Authentication Failures
+- **Implementation**:
+  - Lock after 5 failed attempts within 15 minutes
+  - Lock duration: 30 minutes (increases exponentially)
+  - Send email notification of lockout
+  - Allow unlock via email link or password reset
+  - Track lockout in logs
+  - Monitor for patterns of account lockouts
+  - Implement CAPTCHA before unlock attempts
+  - Alert user of suspicious activity
+
 ### [ ] Hash Passwords with Strong Algorithms
 - **Description**: Use bcrypt, Argon2, or scrypt. Never store plaintext passwords or use weak algorithms like MD5/SHA1.
 - **Severity**: CRITICAL
@@ -113,6 +158,20 @@ A comprehensive security framework for AI application development, incorporating
   - Lock account temporarily after repeated failures
   - Send alert notifications for suspicious activity
 
+### [ ] Rate Limit Password Reset Requests
+- **Description**: Prevent abuse of password reset functionality to enumerate accounts or cause DoS.
+- **Severity**: HIGH
+- **OWASP**: 07 - Identification and Authentication Failures
+- **Implementation**:
+  - Limit password reset requests: 3 per hour per email
+  - Limit password reset requests: 10 per IP per hour
+  - Implement cooldown period between reset requests
+  - Log all password reset requests
+  - Send notification email of reset request
+  - Alert on suspicious reset patterns
+  - Implement CAPTCHA after multiple reset attempts
+  - Monitor for bulk password reset attacks
+
 ### [ ] Add Bot Protection / CAPTCHA
 - **Description**: Implement CAPTCHA or similar challenges on login and sensitive endpoints to prevent automated attacks.
 - **Severity**: HIGH
@@ -123,6 +182,34 @@ A comprehensive security framework for AI application development, incorporating
   - Implement CAPTCHA on password reset
   - Implement CAPTCHA on API registration endpoints
   - Monitor CAPTCHA failure rates for patterns
+
+### [ ] Expire Password Reset Links
+- **Description**: Set short expiration times on password reset tokens and enforce one-time use.
+- **Severity**: CRITICAL
+- **OWASP**: 07 - Identification and Authentication Failures
+- **Implementation**:
+  - Expire reset link after 15-30 minutes
+  - Make reset links one-time use only
+  - Invalidate all other reset tokens when new one is requested
+  - Store reset tokens hashed in database
+  - Include user ID and expiration in token validation
+  - Send reset link via email with clear expiration notice
+  - Log all reset link generation and usage
+  - Require confirmation when resetting to new password
+
+### [ ] Prevent User Enumeration
+- **Description**: Don't reveal whether username/email exists during login or password reset.
+- **Severity**: HIGH
+- **OWASP**: 07 - Identification and Authentication Failures
+- **Implementation**:
+  - Return same message for "user not found" and "invalid password"
+  - Use timing-safe comparisons to prevent timing attacks
+  - Return same HTTP status code (400 or 401) for all authentication failures
+  - Don't reveal account existence in password reset
+  - Generic message: "If an account exists, you will receive an email"
+  - Log enumeration attempts for security monitoring
+  - Implement rate limiting on enumeration attempts
+  - Monitor for bulk account enumeration attacks
 
 ---
 
@@ -219,6 +306,22 @@ A comprehensive security framework for AI application development, incorporating
   - Use context-aware escaping libraries
   - Never use `innerHTML` with user data (use `textContent` instead)
 
+### [ ] Sanitize Input Before Storing
+- **Description**: Remove dangerous characters and scripts from user input before storing in database.
+- **Severity**: CRITICAL
+- **OWASP**: 03 - Injection
+- **Implementation**:
+  - Use input sanitization libraries (bleach, DOMPurify, sanitize-html)
+  - Strip HTML tags from text inputs
+  - Remove dangerous attributes (onclick, onerror, script)
+  - Whitelist allowed HTML tags if HTML is needed
+  - Sanitize markdown before rendering
+  - Remove null bytes and control characters
+  - Limit input length at database level
+  - Validate after sanitization
+  - Log attempts to inject malicious input
+  - Test with XSS payloads before storing
+
 ### [ ] Restrict File Uploads by Type and Size
 - **Description**: Whitelist allowed file extensions, check MIME types, limit file size, scan for malware, and store outside web root.
 - **Severity**: CRITICAL
@@ -226,12 +329,45 @@ A comprehensive security framework for AI application development, incorporating
 - **Implementation**:
   - Whitelist file types: `.pdf`, `.jpg`, `.png` (not `.exe`, `.sh`)
   - Check MIME type on server (not just extension)
+  - Verify MIME type using magic bytes, not just extension
   - Limit file size: e.g., 10MB for images
   - Generate random filenames to prevent path traversal
   - Store files outside webroot (e.g., `/uploads/` not `/public/`)
   - Scan uploaded files with antivirus (VirusTotal API, ClamAV)
   - Implement virus scanning before making files available
   - Set Content-Disposition: attachment for file downloads
+  - Implement Content-Security-Policy: default-src 'self' for uploaded content
+
+### [ ] Verify Payment Webhooks
+- **Description**: Validate webhook authenticity, verify signatures, and prevent replay attacks on payment events.
+- **Severity**: CRITICAL
+- **OWASP**: 01 - Broken Access Control
+- **Implementation**:
+  - Verify webhook signature using shared secret (HMAC-SHA256)
+  - Check webhook timestamp to prevent replay attacks
+  - Store processed webhook IDs to prevent duplicate processing
+  - Validate webhook source IP against payment provider's IP whitelist
+  - Verify webhook contains expected fields before processing
+  - Log all webhook events with source and validation status
+  - Implement idempotency for webhook processing
+  - Test webhooks with provider's test mode
+  - Alert on invalid/unverified webhook attempts
+  - Don't rely on webhook for critical operations; verify with API
+
+### [ ] Set Prices Server-Side
+- **Description**: Never trust client-side price information. Always validate and fetch current prices from server/database.
+- **Severity**: CRITICAL
+- **OWASP**: 01 - Broken Access Control
+- **Implementation**:
+  - Always fetch prices from server database or payment provider
+  - Never accept prices from client-side requests
+  - Validate prices before processing payment
+  - Use payment provider's price validation APIs
+  - Log all price changes with timestamp and who made the change
+  - Implement version control for pricing
+  - Never pass prices in hidden form fields
+  - Include product ID and current price in payment request
+  - Verify price matches before charging customer
 
 ---
 
@@ -246,7 +382,7 @@ A comprehensive security framework for AI application development, incorporating
   Content-Security-Policy: default-src 'self'; script-src 'self' cdn.example.com
   X-Frame-Options: DENY
   X-Content-Type-Options: nosniff
-  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
   X-XSS-Protection: 1; mode=block
   Referrer-Policy: strict-origin-when-cross-origin
   Permissions-Policy: geolocation=(), microphone=(), camera=()
@@ -254,8 +390,25 @@ A comprehensive security framework for AI application development, incorporating
   - CSP prevents XSS by restricting script sources
   - X-Frame-Options prevents clickjacking
   - X-Content-Type-Options prevents MIME sniffing
-  - HSTS enforces HTTPS
+  - HSTS enforces HTTPS with preload
   - Test headers with security scanners
+
+### [ ] Add HSTS (HTTP Strict-Transport-Security)
+- **Description**: Force HTTPS by telling browsers to always use secure connections to your domain.
+- **Severity**: CRITICAL
+- **OWASP**: 02 - Cryptographic Failures
+- **Implementation**:
+  ```
+  Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
+  ```
+  - max-age=31536000: 1 year in seconds
+  - includeSubDomains: Apply to all subdomains
+  - preload: Include in HSTS preload list (optional)
+  - Start with shorter max-age (300 seconds) and increase
+  - Test with SSL Labs HSTS preload list
+  - Submit to HSTS preload list for added security
+  - Document HSTS policy in security headers documentation
+  - Monitor for HSTS policy violations
 
 ### [ ] Implement CSRF Tokens
 - **Description**: Generate unique tokens per session/request for state-changing operations (POST, PUT, DELETE).
@@ -286,6 +439,22 @@ A comprehensive security framework for AI application development, incorporating
   - Use dynamic origin validation if needed
   - Set appropriate CORS methods (not all methods for all endpoints)
   - Validate preflight requests
+
+### [ ] Lock Down CORS (Restrict API Access)
+- **Description**: Implement strict CORS policies to prevent unauthorized cross-origin API access.
+- **Severity**: CRITICAL
+- **OWASP**: 01 - Broken Access Control
+- **Implementation**:
+  - Default to rejecting all cross-origin requests
+  - Explicitly whitelist specific origins (not *)
+  - Only allow necessary HTTP methods per endpoint
+  - Whitelist specific headers (not Authorization by default)
+  - Never allow credentials with wildcard origin
+  - Set max-age low (e.g., 600 seconds)
+  - Log all CORS violations
+  - Monitor for CORS attacks
+  - Test with browser dev tools and Burp Suite
+  - Document CORS policy for team
 
 ---
 
@@ -330,6 +499,36 @@ A comprehensive security framework for AI application development, incorporating
   - Monitor third-party service security advisories
   - Implement fallback if third-party service goes down
 
+### [ ] Disable Directory Listing
+- **Description**: Prevent attackers from viewing directory contents by disabling auto-indexing on web servers.
+- **Severity**: HIGH
+- **OWASP**: 05 - Security Misconfiguration
+- **Implementation**:
+  - In Apache: Set `Options -Indexes` in .htaccess
+  - In Nginx: Remove `autoindex on;` directive
+  - In Node.js/Express: Use proper routing only
+  - Test with browser: navigate to /uploads/ or /public/
+  - Ensure all directories require explicit routing
+  - Log requests to non-existent paths
+  - Monitor for directory enumeration attempts
+  - Document web server configuration
+
+### [ ] Remove Default Admin Routes and Credentials
+- **Description**: Remove or secure all default admin panels, debug routes, and default credentials.
+- **Severity**: CRITICAL
+- **OWASP**: 05 - Security Misconfiguration
+- **Implementation**:
+  - Remove default /admin routes (or password-protect)
+  - Remove debug endpoints from production (/debug, /metrics)
+  - Disable default credentials (admin/admin, root/root)
+  - Remove default accounts if any
+  - Scan codebase for hardcoded credentials
+  - Document all existing admin routes and their security
+  - Implement authentication for all admin endpoints
+  - Monitor access to admin routes
+  - Log all admin panel access
+  - Disable /phpMyAdmin, /wp-admin if not needed
+
 ---
 
 ## AI-Specific & Advanced Threats
@@ -340,13 +539,62 @@ A comprehensive security framework for AI application development, incorporating
 - **AI Risk**: HIGH
 - **Implementation**:
   - Define strict system prompts that override user instructions
-  - Implement input length limits for prompts
+  - Implement input length limits for prompts (e.g., 10,000 characters)
   - Filter for known attack patterns (jailbreak attempts)
+  - Block prompt injection keywords: "ignore", "system prompt", "forget", "forget instructions"
   - Log all model inputs and outputs for auditing
   - Implement prompt templates to control structure
   - Use role-based constraints in system prompts
   - Test with adversarial prompts (jailbreak attempts)
   - Monitor for model behavior changes
+  - Implement input sanitization before sending to model
+
+### [ ] Block Prompt Injection Attacks
+- **Description**: Implement multiple layers of defense against prompt injection and jailbreak attempts.
+- **Severity**: CRITICAL
+- **AI Risk**: CRITICAL
+- **Implementation**:
+  - Create whitelist of allowed instruction patterns
+  - Monitor for attempts to change model behavior
+  - Detect and block commands that override system prompts
+  - Implement input encoding to prevent instruction mixing
+  - Use structured inputs (JSON/templates) instead of free text
+  - Test model with common jailbreak attempts regularly
+  - Set model parameters to restrict output (max_tokens, temperature)
+  - Implement output filtering for compliance
+  - Log all potential prompt injection attempts
+  - Use different models for untrusted inputs vs. trusted sources
+
+### [ ] Cap AI Usage and Implement Request Limits
+- **Description**: Limit total tokens, API calls, and model usage per user/organization to prevent abuse.
+- **Severity**: HIGH
+- **AI Risk**: HIGH
+- **Implementation**:
+  - Set daily token limits per user (e.g., 100,000 tokens/day)
+  - Set monthly token limits per organization
+  - Implement cost-based quotas
+  - Rate limit model API calls (e.g., 100 requests/minute)
+  - Set per-request token limits
+  - Queue requests when limits are approaching
+  - Send warning notifications at 80% usage
+  - Stop processing at 100% usage
+  - Implement upgrade prompts for users reaching limits
+  - Monitor unusual usage patterns
+
+### [ ] Limit Request Size and Prevent Resource Exhaustion
+- **Description**: Prevent large requests that could cause DoS or resource exhaustion.
+- **Severity**: CRITICAL
+- **OWASP**: 04 - Insecure Design
+- **Implementation**:
+  - Set maximum request body size: e.g., 10MB
+  - Set maximum request timeout: e.g., 30 seconds
+  - Implement streaming for large uploads
+  - Set maximum file upload size
+  - Limit batch operation sizes (e.g., max 1000 records)
+  - Implement request queueing
+  - Monitor memory usage during request processing
+  - Set database query timeouts
+  - Reject requests exceeding limits with 413 (Payload Too Large)
 
 ### [ ] Implement Output Guardrails for AI Responses
 - **Description**: Filter AI model outputs for malicious content, PII, or policy violations before returning to users.
@@ -695,5 +943,28 @@ Track completion status and maintain this checklist as part of your security gov
 ---
 
 **Last Updated**: August 15, 2026  
-**Version**: 1.0  
+**Version**: 1.1  
 **Maintainer**: Security Team
+
+---
+
+## Latest Additions (v1.1)
+
+New critical items added from additional security requirements:
+
+- **Reset Sessions on Password Change** - Force re-authentication after password updates
+- **Lock Accounts After Failed Logins** - Automatic account lockout to prevent brute force
+- **Expire Password Reset Links** - Time-limited, single-use password reset tokens
+- **Prevent User Enumeration** - Generic error messages to prevent account discovery
+- **Verify Payment Webhooks** - HMAC signature validation and replay attack prevention
+- **Set Prices Server-Side** - Never trust client-side pricing information
+- **Add HSTS** - HTTP Strict-Transport-Security for browser-enforced HTTPS
+- **Block Prompt Injection** - Multi-layer defense against AI model prompt injection attacks
+- **Cap AI Usage** - Token limits and quota management per user/organization
+- **Limit Request Size** - Prevent DoS through oversized requests
+- **Rate Limit Password Reset** - Prevent abuse of password reset functionality
+- **Sanitize Input Before Storing** - Remove malicious content from database storage
+- **Lock Down CORS** - Strict cross-origin request policy
+- **Disable Directory Listing** - Prevent directory enumeration
+- **Remove Default Admin Routes** - Secure or eliminate default endpoints
+- **Restrict Database Permissions** - Granular role-based access control

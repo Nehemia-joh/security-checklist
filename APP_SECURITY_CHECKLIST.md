@@ -968,3 +968,479 @@ New critical items added from additional security requirements:
 - **Disable Directory Listing** - Prevent directory enumeration
 - **Remove Default Admin Routes** - Secure or eliminate default endpoints
 - **Restrict Database Permissions** - Granular role-based access control
+
+
+## Section A: AI Attack Testing & AI-Specific Controls
+
+### [ ] Run Automated LLM Vulnerability Scans
+- **Description**: Probe AI endpoints with known attack suites before every release and after every prompt or model change.
+- **Severity**: CRITICAL
+- **AI Risk**: LLM01 Prompt Injection, LLM07 System Prompt Leakage
+- **Implementation**:
+  - Use garak for probe-based scanning (encoding tricks, jailbreak templates, leakage probes)
+  - Use PyRIT (Microsoft) for orchestrated multi-turn attacks
+  - Use promptfoo for regression suites that run in CI
+  - Fail the build when attack success rate exceeds an agreed threshold
+  - Store results per model version and prompt version
+
+### [ ] Test Indirect Prompt Injection
+- **Description**: Attacker-controlled content (web pages, emails, PDFs, RAG documents, tool outputs) may contain instructions the model follows.
+- **Severity**: CRITICAL
+- **AI Risk**: LLM01 Prompt Injection
+- **Implementation**:
+  - Plant canary instructions in test documents and check whether the agent complies
+  - Test every ingestion path: file uploads, URL fetches, email, calendar, tool results
+  - Label untrusted content clearly in prompts (defense in depth, not a complete fix)
+  - Require user confirmation before any action triggered by retrieved content
+  - Track the rate at which retrieved content leads to a tool call
+
+### [ ] Test Multi-Turn and Escalation Jailbreaks
+- **Description**: Attacks often spread harmful intent across several turns (crescendo attacks) or use persona and role-play framing.
+- **Severity**: HIGH
+- **AI Risk**: LLM01 Prompt Injection
+- **Implementation**:
+  - Script multi-turn escalation sequences and record the turn where refusal fails
+  - Test role-play, hypothetical, "developer mode", and persona-swap framings
+  - Re-run the suite on every model, system prompt, or guardrail change
+  - Keep a versioned library of past successful jailbreaks as regression tests
+
+### [ ] Test System Prompt Extraction
+- **Description**: Check whether users can reveal system prompts through direct requests or indirect methods.
+- **Severity**: HIGH
+- **AI Risk**: LLM07 System Prompt Leakage
+- **Implementation**:
+  - Test "repeat everything above", translation, summarization, encoding, and format-conversion requests
+  - Never place secrets, credentials, or internal URLs in system prompts
+  - Assume every system prompt will eventually become public
+
+### [ ] Test Encoding and Obfuscation Bypasses
+- **Description**: Filters often miss payloads hidden with encoding or lookalike characters.
+- **Severity**: HIGH
+- **AI Risk**: LLM01 Prompt Injection
+- **Implementation**:
+  - Test base64, ROT13, leetspeak, homoglyphs (Cyrillic and Greek lookalikes), zero-width characters, Unicode tag characters, and payloads split across turns
+  - Test low-resource languages and mixed-script input
+  - Normalize Unicode (NFKC) and strip invisible or control characters before classification
+
+### [ ] Test Multimodal Injection
+- **Description**: Instructions can be hidden in images, PDFs, audio, or file metadata.
+- **Severity**: HIGH
+- **AI Risk**: LLM01 Prompt Injection
+- **Implementation**:
+  - Test low-contrast or tiny text in images, and instructions in EXIF or other metadata
+  - Test OCR-readable text inside PDFs and text spoken in audio files
+  - Strip metadata on upload; run OCR and screen the extracted text as untrusted input
+
+### [ ] Enforce Least-Privilege Tool Permissions
+- **Description**: Limit what an AI agent can do, since excessive tool permissions turn a prompt injection into a real action.
+- **Severity**: CRITICAL
+- **AI Risk**: LLM06 Excessive Agency
+- **Implementation**:
+  - Allowlist tools per task; default to read-only
+  - Scope OAuth tokens narrowly and use short expiry
+  - Require human approval for send, delete, pay, publish, and permission-change actions
+  - Cap tool calls per turn and log every call with its arguments
+
+### [ ] Test Tool Misuse and Parameter Tampering
+- **Description**: Check whether the agent can be steered into calling tools with other users' IDs, out-of-scope paths, or elevated flags.
+- **Severity**: HIGH
+- **AI Risk**: LLM06 Excessive Agency
+- **Implementation**:
+  - Attempt cross-user IDs, path traversal, and escalated parameters through the agent
+  - Enforce authorization in the tool backend, never only in the prompt
+  - Validate every tool argument against a schema before execution
+
+### [ ] Block Markdown and HTML Exfiltration Channels
+- **Description**: Rendered markdown can leak data when the model emits an image or link whose URL carries stolen content, for example an image tag pointing at an attacker's server with data in the query string.
+- **Severity**: CRITICAL
+- **AI Risk**: LLM02 Sensitive Information Disclosure, LLM05 Improper Output Handling
+- **Implementation**:
+  - Do not auto-load remote images from model output, or proxy them through an allowlist
+  - Restrict img-src in the Content-Security-Policy
+  - Test with injected exfiltration payloads in markdown, HTML, and link formats
+
+### [ ] Treat Model Output as Untrusted
+- **Description**: Model output that reaches an interpreter or a sink can cause injection in downstream systems.
+- **Severity**: CRITICAL
+- **AI Risk**: LLM05 Improper Output Handling
+- **Implementation**:
+  - Never pass model output to eval, exec, shell commands, or innerHTML
+  - Parameterize any SQL the model generates, or restrict it to read-only query templates
+  - Validate structured output against a schema before use
+
+### [ ] Sandbox Code Execution Tools
+- **Description**: Code the agent runs must not reach secrets, the internal network, or the host.
+- **Severity**: CRITICAL
+- **AI Risk**: LLM05 Improper Output Handling, LLM06 Excessive Agency
+- **Implementation**:
+  - Run code in ephemeral containers or microVMs
+  - Block network egress by default; allow specific hosts only when needed
+  - Set CPU, memory, and wall-clock limits
+  - Mount no secrets; use a read-only filesystem except a scratch directory
+  - Apply seccomp or AppArmor profiles
+
+### [ ] Test for Sensitive Information Disclosure
+- **Description**: Check whether the model reveals PII, secrets, or other users' data.
+- **Severity**: HIGH
+- **AI Risk**: LLM02 Sensitive Information Disclosure
+- **Implementation**:
+  - Seed a test corpus with canary secrets and fake PII, then probe for them
+  - Test cross-user leakage with two accounts
+  - Run PII detection (Microsoft Presidio or similar) on inputs, outputs, logs, and traces
+
+### [ ] Enforce Tenant Isolation in RAG and Vector Stores
+- **Description**: Similarity search without a server-enforced tenant filter returns other tenants' chunks.
+- **Severity**: CRITICAL
+- **AI Risk**: LLM08 Vector and Embedding Weaknesses
+- **Implementation**:
+  - Bind the tenant filter on the server; never take it from the client
+  - Test queries from tenant A that should not return tenant B chunks
+  - Use separate indexes or namespaces for high-sensitivity tenants
+  - Restrict who can read raw embeddings, since embedding inversion can recover text
+
+### [ ] Protect Against RAG and Training Data Poisoning
+- **Description**: Malicious or false documents in the knowledge base or training set can change model behavior.
+- **Severity**: HIGH
+- **AI Risk**: LLM04 Data and Model Poisoning
+- **Implementation**:
+  - Record provenance for every ingested document
+  - Review new sources before they enter the index
+  - Restrict who can write to the knowledge base
+  - Plant canary documents to detect unauthorized retrieval or exfiltration
+
+### [ ] Verify AI Model and Dependency Supply Chain
+- **Description**: Model files and model-loading code can execute attacker code.
+- **Severity**: HIGH
+- **AI Risk**: LLM03 Supply Chain
+- **Implementation**:
+  - Prefer safetensors over pickle-based formats; never unpickle untrusted model files
+  - Pin model revisions by commit hash and verify checksums or signatures
+  - Scan model files with modelscan or similar tools
+  - Record models and datasets in an AI bill of materials (AI-BOM)
+
+### [ ] Validate MCP and Third-Party Tool Servers
+- **Description**: Tool descriptions and outputs from external servers can carry hidden instructions (tool poisoning) or shadow trusted tools with the same name.
+- **Severity**: CRITICAL
+- **AI Risk**: LLM01 Prompt Injection, LLM03 Supply Chain
+- **Implementation**:
+  - Pin server versions and tool definitions; alert when a description changes
+  - Review tool descriptions for hidden instructions before approval
+  - Namespace tools to prevent shadowing
+  - Give each server its own least-privilege credentials
+  - Allowlist approved servers only
+
+### [ ] Limit Unbounded Consumption and Agent Loops
+- **Description**: Agents can loop, recurse, or run up costs through long inputs.
+- **Severity**: HIGH
+- **AI Risk**: LLM10 Unbounded Consumption
+- **Implementation**:
+  - Set maximum steps, recursion depth, tokens, and wall-clock time per run
+  - Detect repeated identical tool calls and stop them
+  - Alert on per-key spend spikes
+  - Test "denial of wallet" cases: very long inputs and forced loops
+
+### [ ] Test for Model Extraction and Distillation
+- **Description**: Systematic querying can copy model behavior.
+- **Severity**: MEDIUM
+- **AI Risk**: LLM10 Unbounded Consumption (model theft)
+- **Implementation**:
+  - Detect templated, high-volume, or coverage-style query patterns
+  - Throttle per account; do not expose logprobs unless required
+  - Enforce terms of service and suspend abusive accounts
+
+### [ ] Test for Training Data Extraction and Membership Inference
+- **Description**: Fine-tuned models can regurgitate training records.
+- **Severity**: MEDIUM
+- **AI Risk**: LLM02 Sensitive Information Disclosure
+- **Implementation**:
+  - Run prefix-completion probes against fine-tuned models
+  - Deduplicate and scrub PII before fine-tuning
+  - Consider differential privacy where the data justifies it
+
+### [ ] Prevent Cross-User Leakage Through Caches
+- **Description**: Prompt caches, semantic caches, and response caches keyed without user or tenant context can return one user's answer to another.
+- **Severity**: CRITICAL
+- **AI Risk**: LLM02 Sensitive Information Disclosure
+- **Implementation**:
+  - Include tenant and permission scope in every cache key
+  - Tune and test semantic-cache similarity thresholds
+  - Do not cache responses that contain user-specific data
+  - Test with two accounts issuing near-identical prompts
+
+### [ ] Measure Hallucination and Groundedness
+- **Description**: Unsupported answers can cause harm when users rely on them.
+- **Severity**: HIGH
+- **AI Risk**: LLM09 Misinformation
+- **Implementation**:
+  - Score faithfulness against retrieved sources (RAGAS or similar)
+  - Require citations that link to verifiable sources
+  - Flag unsupported claims and route high-stakes domains to human review
+
+### [ ] Test Guardrail Classifiers Themselves
+- **Description**: Input and output filters can be bypassed or can block legitimate use.
+- **Severity**: HIGH
+- **AI Risk**: LLM01 Prompt Injection
+- **Implementation**:
+  - Run known bypass sets against input and output filters (Llama Guard, NeMo Guardrails, LLM Guard, or Lakera Guard)
+  - Measure false-negative and false-positive rates
+  - Layer defenses; do not rely on one classifier or on keyword blocklists
+
+### [ ] Pin and Regression-Test Model Versions
+- **Description**: A model upgrade can silently change safety and security behavior.
+- **Severity**: HIGH
+- **AI Risk**: LLM09 Misinformation
+- **Implementation**:
+  - Pin the exact model ID in production
+  - Re-run security and safety evals before every upgrade
+  - Roll out with canaries and keep a tested rollback path
+
+### [ ] Require Human Approval for High-Risk AI Actions
+- **Description**: Consequential actions should not depend on the model's judgment alone.
+- **Severity**: CRITICAL
+- **AI Risk**: LLM06 Excessive Agency
+- **Implementation**:
+  - Gate payments, deletions, external messages, permission changes, and production deploys
+  - Show the exact action and parameters to the approver
+  - Use time-limited approvals and log the approver's identity
+
+### [ ] Secure Persistent Agent Memory
+- **Description**: Stored memories can hold injected instructions that fire in later sessions.
+- **Severity**: HIGH
+- **AI Risk**: LLM01 Prompt Injection
+- **Implementation**:
+  - Scope memory to a single user
+  - Sanitize or review content before it is stored
+  - Let users view and delete their memories; expire unused memory
+  - Test whether injected content in one session affects a later one
+
+### [ ] Detect Anomalous AI Usage
+- **Description**: Attack attempts often show up as unusual patterns before they succeed.
+- **Severity**: MEDIUM
+- **AI Risk**: LLM01 Prompt Injection, LLM10 Unbounded Consumption
+- **Implementation**:
+  - Alert on spikes in refusals, tool calls, prompt length, and jailbreak-like phrasing
+  - Keep per-key baselines and flag deviations
+
+---
+
+## Section B: Other Threats Not Covered Above
+
+### [ ] Block DNS Rebinding and Metadata Access From URL-Fetching Tools
+- **Description**: Tools that fetch URLs can be pointed at internal services or cloud metadata endpoints.
+- **Severity**: CRITICAL
+- **OWASP**: 10 - SSRF
+- **Implementation**:
+  - Resolve DNS once and connect to the pinned IP
+  - Block private, loopback, and link-local ranges, including 169.254.169.254
+  - Require IMDSv2 with a hop limit of 1
+  - Re-validate after every redirect; allow https only
+
+### [ ] Prevent IDOR on Conversation, Artifact, and Share IDs
+- **Description**: Guessable or unchecked IDs expose other users' content.
+- **Severity**: CRITICAL
+- **OWASP**: 01 - Broken Access Control
+- **Implementation**:
+  - Use random UUIDs and check ownership on every read, update, and delete
+  - Give share links unguessable tokens with an expiry
+  - Test by changing IDs across accounts
+
+### [ ] Secure Streaming Endpoints (SSE and WebSocket)
+- **Description**: Streaming connections can be hijacked cross-site or left open.
+- **Severity**: HIGH
+- **OWASP**: 01 - Broken Access Control
+- **Implementation**:
+  - Validate the Origin header during the WebSocket handshake to prevent cross-site WebSocket hijacking
+  - Authenticate the stream on connect and bind it to the session
+  - Set idle timeouts and limit concurrent streams per user
+
+### [ ] Secure OAuth and SSO Flows
+- **Description**: Misconfigured OAuth allows account takeover.
+- **Severity**: CRITICAL
+- **OWASP**: 07 - Identification and Authentication Failures
+- **Implementation**:
+  - Validate the state and nonce parameters
+  - Use PKCE for public clients
+  - Require exact-match redirect_uri values
+  - Reject alg:none and algorithm-confusion attacks; validate iss and aud
+
+### [ ] Prevent ReDoS and Parser Exhaustion
+- **Description**: Backtracking regexes and deeply nested input can freeze a service.
+- **Severity**: HIGH
+- **OWASP**: 04 - Insecure Design
+- **Implementation**:
+  - Audit regexes; use RE2-based engines for user-controlled patterns
+  - Limit JSON depth and body size; set parser timeouts
+
+### [ ] Prevent Server-Side Template Injection
+- **Description**: User input rendered as template source can execute code.
+- **Severity**: HIGH
+- **OWASP**: 03 - Injection
+- **Implementation**:
+  - Never use user input as template source
+  - Keep autoescape enabled; use sandboxed templates where supported
+
+### [ ] Prevent Mass Assignment and Prototype Pollution
+- **Description**: Update payloads can set fields the user should not control, or pollute object prototypes.
+- **Severity**: HIGH
+- **OWASP**: 01 / 03
+- **Implementation**:
+  - Allowlist fields in update payloads (see "Block Unauthorized Field Access" above)
+  - Reject __proto__, constructor, and prototype keys
+  - Use Map or Object.create(null) for dictionaries; keep merge libraries patched
+
+### [ ] Prevent Log Injection and Secret Leakage in Logs and Traces
+- **Description**: Logs, APM traces, and LLM observability tools often store prompts, completions, and tokens.
+- **Severity**: HIGH
+- **OWASP**: 09 - Logging and Monitoring Failures
+- **Implementation**:
+  - Escape CR and LF characters in logged values
+  - Redact tokens and PII in logs, traces, and prompt-logging tools
+  - Restrict access to log stores
+
+### [ ] Harden CI/CD and Build Pipelines
+- **Description**: A compromised pipeline can ship malicious code without touching production directly.
+- **Severity**: CRITICAL
+- **OWASP**: 08 - Software and Data Integrity Failures
+- **Implementation**:
+  - Pin GitHub Actions to commit SHAs
+  - Grant GITHUB_TOKEN least privilege
+  - Do not expose secrets to workflows from forked pull requests; review pull_request_target usage
+  - Sign artifacts; generate SLSA provenance and an SBOM
+
+### [ ] Harden Containers and Infrastructure
+- **Description**: Misconfigured infrastructure is a common entry point.
+- **Severity**: HIGH
+- **OWASP**: 05 - Security Misconfiguration
+- **Implementation**:
+  - Run containers as non-root with minimal base images
+  - Scan images and IaC (Trivy, Grype, Checkov, tfsec)
+  - Block public storage buckets; keep databases in private subnets
+  - Deny by default in security groups
+
+### [ ] Rotate Secrets and Manage Key Lifecycle
+- **Description**: Long-lived keys extend the damage of any leak.
+- **Severity**: HIGH
+- **OWASP**: 02 - Cryptographic Failures
+- **Implementation**:
+  - Use a KMS for key management
+  - Rotate on a schedule and after staff changes
+  - Scan repositories and prompts for secrets (gitleaks, trufflehog)
+
+### [ ] Test for Business Logic Abuse
+- **Description**: Valid requests used in unintended sequences can cause fraud or data corruption.
+- **Severity**: HIGH
+- **OWASP**: 04 - Insecure Design
+- **Implementation**:
+  - Test skipped workflow steps, replayed completed flows, and negative quantities
+  - Test coupon and credit reuse under concurrency
+  - Write state-machine tests for each multi-step flow
+
+### [ ] Prevent Race Conditions (TOCTOU)
+- **Description**: Check-then-act sequences can be exploited with parallel requests.
+- **Severity**: HIGH
+- **OWASP**: 04 - Insecure Design
+- **Implementation**:
+  - Use transactions with row locks or optimistic version checks
+  - Use idempotency keys on payment and write endpoints
+  - Test with parallel request tools (Turbo Intruder, k6)
+
+### [ ] Protect Against Web Cache Poisoning and Cache Deception
+- **Description**: Shared caches can serve one user's private response to others.
+- **Severity**: MEDIUM
+- **OWASP**: 05 - Security Misconfiguration
+- **Implementation**:
+  - Send Cache-Control: private for user-specific responses
+  - Exclude unkeyed headers from cache keys; test with Param Miner
+
+### [ ] Prevent Email Header Injection
+- **Description**: Unfiltered user input in email headers can add recipients or change content.
+- **Severity**: MEDIUM
+- **OWASP**: 03 - Injection
+- **Implementation**:
+  - Strip CR and LF from email fields
+  - Configure SPF, DKIM, and DMARC on sending domains
+
+### [ ] Harden Client-Side Storage and Mobile Apps
+- **Description**: Tokens and secrets stored on the device are exposed to anyone with device access or malware.
+- **Severity**: MEDIUM
+- **OWASP**: 02 - Cryptographic Failures
+- **Implementation**:
+  - Store tokens in Keychain or Keystore, not localStorage
+  - Use certificate pinning for sensitive apps
+  - Keep secrets out of the app bundle
+
+### [ ] Maintain DNS and Subdomain Hygiene
+- **Description**: Dangling DNS records allow subdomain takeover.
+- **Severity**: MEDIUM
+- **OWASP**: 05 - Security Misconfiguration
+- **Implementation**:
+  - Inventory DNS records and remove dangling CNAMEs
+  - Monitor with dnsReaper or similar tools
+  - Protect registrar accounts with MFA
+
+### [ ] Enforce Phishing-Resistant MFA and Privileged Access Management
+- **Description**: Admin accounts are the highest-value target.
+- **Severity**: CRITICAL
+- **OWASP**: 07 - Identification and Authentication Failures
+- **Implementation**:
+  - Require FIDO2 or passkeys for administrators
+  - Grant privileged access just in time
+  - Run quarterly access reviews; audit break-glass accounts
+
+### [ ] Resist Deepfake and Social Engineering
+- **Description**: Voice, video, and text impersonation can trick staff into approving payments or resetting credentials.
+- **Severity**: HIGH
+- **Implementation**:
+  - Verify payment and credential-change requests through a second channel
+  - Do not treat voice alone as authentication
+  - Run simulated phishing and deepfake awareness training
+
+### [ ] Control Privacy in AI Data Flows
+- **Description**: Prompts sent to third-party model providers may contain regulated data.
+- **Severity**: HIGH
+- **OWASP**: 02 - Cryptographic Failures (data protection)
+- **Implementation**:
+  - Classify data before it is sent to any model API
+  - Verify the provider's data processing terms and retention settings
+  - Opt out of provider training where available
+  - Set retention limits for prompts and logs; include vector stores and caches in deletion requests
+
+### [ ] Plan Backup, Recovery, and Ransomware Resilience
+- **Description**: Recovery must cover data, vector indexes, and configuration.
+- **Severity**: HIGH
+- **Implementation**:
+  - Follow the 3-2-1 backup rule with immutable or offline copies
+  - Test restores quarterly; define RTO and RPO
+  - Include vector databases, prompts, and model configuration
+
+### [ ] Publish a Vulnerability Disclosure Policy
+- **Description**: Give researchers a clear way to report issues.
+- **Severity**: RECOMMENDED
+- **Implementation**:
+  - Publish /.well-known/security.txt (RFC 9116)
+  - Run a disclosure program or bug bounty; set response SLAs
+
+---
+
+## Section C: Recommended Testing Tools
+
+| Category | Tools |
+|---|---|
+| AI red teaming | garak, PyRIT, promptfoo, Giskard |
+| Guardrails and classifiers | Llama Guard, NeMo Guardrails, LLM Guard, Lakera Guard |
+| PII detection | Microsoft Presidio |
+| Web and API testing (DAST) | Burp Suite, OWASP ZAP, Nuclei, Schemathesis |
+| Static analysis (SAST) | Semgrep, CodeQL, SonarQube |
+| Dependencies and containers | Trivy, Grype, Snyk, Dependabot |
+| Secrets scanning | gitleaks, trufflehog |
+| Model file scanning | modelscan |
+| Threat frameworks | OWASP Top 10 for LLM Applications (2025), MITRE ATLAS, NIST AI RMF, NIST AI 600-1 (Generative AI Profile) |
+
+---
+
+## Phase 4: AI Red Team (Ongoing)
+
+- Run automated scans (garak, PyRIT, promptfoo) on every release
+- Re-run the jailbreak and injection regression suite after every model or prompt change
+- Hold a manual AI red-team exercise each quarter, covering agents, RAG, and MCP tools
+- Map findings to MITRE ATLAS techniques and track them in the same backlog as other security issues

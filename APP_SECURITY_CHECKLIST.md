@@ -1438,6 +1438,296 @@ New critical items added from additional security requirements:
 
 ---
 
+## Section D: Governance, Compliance, Infrastructure & Operations
+
+### Governance and Process
+
+### [ ] Perform Threat Modeling for Each Feature
+- **Description**: Identify threats before building, not after release.
+- **Severity**: HIGH
+- **Implementation**:
+  - Use STRIDE or a similar method for each new feature and integration
+  - Record data flows, trust boundaries, and entry points
+  - Re-run the model when architecture changes
+
+### [ ] Run Secure Coding Training and Security Champions
+- **Description**: Build security knowledge across engineering teams.
+- **Severity**: MEDIUM
+- **Implementation**:
+  - Provide role-based secure coding training at onboarding and yearly
+  - Appoint a security champion in each team
+  - Include security checks in pull request review templates
+
+### [ ] Assign Owners and Review Dates for Every Control
+- **Description**: Controls without owners decay.
+- **Severity**: MEDIUM
+- **Implementation**:
+  - Name one owner per checklist section
+  - Set a review date for each control and track overdue items
+  - Record exceptions with an approver and an expiry date
+
+### Compliance and Legal
+
+### [ ] Meet Breach Notification Deadlines
+- **Description**: Regulators and customers have strict notification windows.
+- **Severity**: CRITICAL
+- **Implementation**:
+  - Document who decides whether an incident is a reportable breach
+  - Track the GDPR 72-hour regulator deadline and other applicable windows
+  - Keep notification templates ready and review them yearly
+
+### [ ] Support Data Subject Rights
+- **Description**: Users can request export, correction, and deletion of their data.
+- **Severity**: HIGH
+- **Implementation**:
+  - Build self-service or documented export and deletion flows
+  - Extend deletion to backups (on a defined schedule), logs, caches, and vector stores
+  - Log every request and its completion time
+
+### [ ] Define Data Retention and Residency Rules
+- **Description**: Keeping data longer than needed increases breach impact and compliance risk.
+- **Severity**: HIGH
+- **Implementation**:
+  - Publish a retention schedule for each data category, including logs and prompts
+  - Automate deletion when retention ends
+  - Store data in approved regions and document transfers
+
+### [ ] Complete Privacy Impact Assessments
+- **Description**: High-risk processing needs a documented assessment before launch.
+- **Severity**: HIGH
+- **Implementation**:
+  - Run a DPIA for new processing of personal or sensitive data
+  - Review it when the purpose, data types, or vendors change
+
+### [ ] Manage Third-Party Vendor Risk
+- **Description**: Vendors with access to your data or systems extend your attack surface.
+- **Severity**: HIGH
+- **Implementation**:
+  - Assess vendors before onboarding and reassess yearly
+  - Require security terms, breach notification clauses, and data processing agreements
+  - Keep an inventory of vendors and the data each one holds
+
+### [ ] Confirm Compliance Scope (PCI DSS, HIPAA, SOC 2)
+- **Description**: Scope determines which controls apply and how much evidence you must keep.
+- **Severity**: HIGH
+- **Implementation**:
+  - Identify which frameworks apply and what systems fall in scope
+  - Keep evidence (logs, reviews, test results) current for audits
+  - Minimize scope: keep payment and health data in the smallest possible system
+
+### Infrastructure and Network
+
+### [ ] Protect Public Endpoints From DDoS and Malicious Traffic
+- **Description**: Public services need protection against volumetric and application-layer floods.
+- **Severity**: HIGH
+- **Implementation**:
+  - Put a CDN or DDoS service and a WAF in front of public endpoints
+  - Tune WAF rules and test them in monitor mode before blocking
+  - Define a DDoS response runbook
+
+### [ ] Segment Networks and Filter Egress
+- **Description**: A compromised service should not reach every other system.
+- **Severity**: HIGH
+- **OWASP**: 05 - Security Misconfiguration
+- **Implementation**:
+  - Separate public, application, and data tiers into different subnets
+  - Allow outbound traffic only to required destinations
+  - Restrict admin and database access to bastions or VPN
+
+### [ ] Automate Certificate Lifecycle Management
+- **Description**: Expired certificates cause outages and can hide man-in-the-middle attacks.
+- **Severity**: HIGH
+- **OWASP**: 02 - Cryptographic Failures
+- **Implementation**:
+  - Automate issuance and renewal (for example ACME)
+  - Monitor expiry dates and alert 30 days ahead
+  - Use strong key sizes and retire old certificates
+
+### [ ] Secure DNS and Registrar Accounts
+- **Description**: DNS hijacking redirects users and can issue fraudulent certificates.
+- **Severity**: HIGH
+- **Implementation**:
+  - Enable DNSSEC where supported
+  - Lock registrar and DNS provider accounts with MFA and registry locks
+  - Restrict who can change DNS records
+
+### Frontend and Third-Party Scripts
+
+### [ ] Use Subresource Integrity for Third-Party Scripts
+- **Description**: A compromised third-party host can alter scripts your pages load.
+- **Severity**: HIGH
+- **OWASP**: 08 - Software and Data Integrity Failures
+- **Implementation**:
+  - Add integrity attributes to externally hosted scripts and styles
+  - Self-host critical libraries where practical
+  - Review the CSP script-src list against this inventory
+
+### [ ] Control Analytics and Marketing Tags
+- **Description**: Tag managers and analytics scripts can be used to skim payment data or leak user data.
+- **Severity**: HIGH
+- **Implementation**:
+  - Inventory every tag and script on sensitive pages
+  - Restrict tag manager publishing to approved people, with review
+  - Keep payment and sensitive forms free of third-party scripts where possible
+
+### [ ] Validate Origins in postMessage and Iframe Communication
+- **Description**: Messages accepted from any origin can be used to take over actions or steal data.
+- **Severity**: HIGH
+- **OWASP**: 01 - Broken Access Control
+- **Implementation**:
+  - Check event.origin against an allowlist before processing messages
+  - Send messages with an explicit target origin, never "*"
+  - Validate the message schema
+
+### Accounts and Lifecycle
+
+### [ ] Harden Account Recovery Flows
+- **Description**: Recovery flows are often weaker than login and become the easiest way in.
+- **Severity**: CRITICAL
+- **OWASP**: 07 - Identification and Authentication Failures
+- **Implementation**:
+  - Apply the same MFA checks to recovery as to login
+  - Require re-verification and notify old and new contacts on email or MFA changes
+  - Make support-led recovery follow a documented identity check
+
+### [ ] Verify Email and Contact Changes
+- **Description**: Changing an account's email without verification enables account takeover.
+- **Severity**: HIGH
+- **Implementation**:
+  - Confirm changes through both the old and new address
+  - Require re-authentication before changing email, phone, or MFA settings
+
+### [ ] Revoke Access Promptly on Offboarding
+- **Description**: Former staff and contractors often keep access to cloud, code, and production.
+- **Severity**: HIGH
+- **OWASP**: 01 - Broken Access Control
+- **Implementation**:
+  - Revoke access to cloud, repositories, SaaS tools, and production within 24 hours
+  - Rotate shared secrets the person knew
+  - Review access logs for the final weeks of employment
+
+### [ ] Delete Accounts and Their Data Completely
+- **Description**: Account deletion that leaves data behind creates privacy and compliance risk.
+- **Severity**: HIGH
+- **Implementation**:
+  - Define what is deleted, what is anonymized, and what is retained by law
+  - Propagate deletion to backups on schedule, logs, caches, and third parties
+  - Test deletion end-to-end
+
+### Environments and Data Handling
+
+### [ ] Keep Production Data Out of Non-Production Environments
+- **Description**: Staging and development systems are usually less protected than production.
+- **Severity**: HIGH
+- **Implementation**:
+  - Use synthetic data in development and staging
+  - If production data is needed, mask or tokenize it first
+  - Apply the same access controls to non-production systems
+
+### [ ] Disable Debug Output and Generic Error Messages in Production
+- **Description**: Stack traces and verbose errors reveal internal structure and secrets.
+- **Severity**: HIGH
+- **OWASP**: 05 - Security Misconfiguration
+- **Implementation**:
+  - Turn off debug mode and framework dev tools in production
+  - Return generic error messages to clients and keep details in server logs
+
+### [ ] Encrypt and Test Backups
+- **Description**: Unencrypted or untested backups fail when you need them.
+- **Severity**: HIGH
+- **Implementation**:
+  - Encrypt all backups with keys held separately from the backup store
+  - Restore from backups on a schedule and record the results
+
+### [ ] Keep PII Out of Logs, Analytics, and Error Reports
+- **Description**: Logs and analytics tools are often widely accessible and poorly protected.
+- **Severity**: HIGH
+- **OWASP**: 09 - Logging and Monitoring Failures
+- **Implementation**:
+  - Scrub or hash identifiers before they reach logs and analytics
+  - Limit who can read logs and error-reporting tools
+  - Set short retention for debug-level logs
+
+### Endpoints and Workforce
+
+### [ ] Enforce Device Security for Staff
+- **Description**: Developer and admin laptops hold credentials and source code.
+- **Severity**: HIGH
+- **Implementation**:
+  - Require full-disk encryption, screen locks, and automatic updates
+  - Manage devices through MDM and remove access for unmanaged devices
+  - Store no long-lived production credentials on laptops
+
+### [ ] Train Support Staff Against Social Engineering
+- **Description**: Support staff are a common target for account-recovery and password-reset abuse.
+- **Severity**: HIGH
+- **Implementation**:
+  - Require identity verification before account changes
+  - Provide scripts and escalation paths for suspicious requests
+  - Run regular simulated phishing exercises
+
+### Testing and Detection
+
+### [ ] Run Regular Penetration Tests and Retests
+- **Description**: Independent testing finds issues that automated tools miss.
+- **Severity**: HIGH
+- **Implementation**:
+  - Test at least yearly and after major releases
+  - Retest every critical and high finding after the fix
+  - Track findings to closure in the same backlog as other work
+
+### [ ] Fuzz Parsers and File Handlers
+- **Description**: Parsers for files, images, and structured input are frequent sources of crashes and memory bugs.
+- **Severity**: MEDIUM
+- **Implementation**:
+  - Fuzz parsers in CI or on a schedule (for example with OSS-Fuzz or libFuzzer)
+  - Add regression tests for every crash found
+
+### [ ] Tune Security Detections and Reduce Alert Fatigue
+- **Description**: Alerts nobody acts on hide real incidents.
+- **Severity**: HIGH
+- **OWASP**: 09 - Logging and Monitoring Failures
+- **Implementation**:
+  - Write detections for known attacker techniques and review them quarterly
+  - Track alert volume and the share of alerts that lead to action
+  - Retire or tune noisy rules
+
+### [ ] Maintain On-Call and Security Runbooks
+- **Description**: Responders need clear steps when an alert fires at night.
+- **Severity**: HIGH
+- **Implementation**:
+  - Keep an on-call rotation with escalation paths
+  - Write a runbook for each high-severity alert type
+  - Practice runbooks in tabletop exercises
+
+### Business Abuse
+
+### [ ] Detect and Limit Fraud, Bot Accounts, and Account Farming
+- **Description**: Automated accounts and fraudulent sign-ups distort metrics and cost money.
+- **Severity**: HIGH
+- **Implementation**:
+  - Use device signals, velocity checks, and CAPTCHA on sign-up
+  - Verify email or phone for new accounts
+  - Review and suspend clusters of linked accounts
+
+### [ ] Prevent Promo, Referral, and Credit Abuse
+- **Description**: Coupons, referral rewards, and credits can be farmed or reused.
+- **Severity**: MEDIUM
+- **Implementation**:
+  - Limit each reward to one per verified identity or payment method
+  - Make credit redemption atomic (see the race-condition item)
+  - Monitor redemption patterns and set caps
+
+### [ ] Detect and Limit Scraping and Content Theft
+- **Description**: Bulk scraping can copy your content, overload your systems, and reveal business data.
+- **Severity**: MEDIUM
+- **Implementation**:
+  - Rate-limit by account and IP, and detect automated browsing patterns
+  - Require login for bulk data access
+  - Watermark or monitor high-value content where practical
+
+---
+
 ## Phase 4: AI Red Team (Ongoing)
 
 - Run automated scans (garak, PyRIT, promptfoo) on every release

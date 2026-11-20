@@ -1,6 +1,10 @@
 # AI Application Security Checklist
 
-A comprehensive security framework for AI application development, incorporating your requirements, OWASP Top 10, and industry best practices.
+A comprehensive security framework for AI application development, incorporating traditional AppSec requirements, OWASP Top 10, OWASP Top 10 for LLM Applications **2026**, OWASP Top 10 for Agentic Applications, MITRE ATLAS, and industry best practices.
+
+**Version**: 1.2.2  
+**Last Updated**: November 20, 2026  
+**Maintainer**: Security Team
 
 ---
 
@@ -15,6 +19,13 @@ A comprehensive security framework for AI application development, incorporating
 7. [Logging, Monitoring & Incident Response](#logging-monitoring--incident-response)
 8. [API Security & Rate Limiting](#api-security--rate-limiting)
 9. [OWASP Top 10 Coverage](#owasp-top-10-coverage)
+10. [OWASP LLM Top 10 2026 Mapping](#owasp-llm-top-10-2026-mapping)
+11. [Section A: AI Attack Testing & AI-Specific Controls](#section-a-ai-attack-testing--ai-specific-controls)
+12. [Section B: Other Threats Not Covered Above](#section-b-other-threats-not-covered-above)
+13. [Section C: Recommended Testing Tools](#section-c-recommended-testing-tools)
+14. [Section D: Governance, Compliance, Infrastructure & Operations](#section-d-governance-compliance-infrastructure--operations)
+15. [Phase 4: AI Red Team (Ongoing)](#phase-4-ai-red-team-ongoing)
+16. [Scanning Playbook & Release Gates](#scanning-playbook--release-gates)
 
 ---
 
@@ -31,8 +42,8 @@ A comprehensive security framework for AI application development, incorporating
   - Never commit secrets to version control
   - Use different keys for different environments (dev, staging, prod)
 
-### [ ] Use Public Database Keys (Read-Only Where Possible)
-- **Description**: Implement role-based access with minimal required permissions. Use read-only keys for public data operations.
+### [ ] Use Least-Privilege Database Keys (Public Keys Only With RLS)
+- **Description**: Implement role-based access with minimal required permissions. Use read-only keys for public data operations. Public or anon keys must be paired with row-level security.
 - **Severity**: CRITICAL
 - **OWASP**: 01 - Broken Access Control
 - **Implementation**:
@@ -81,6 +92,14 @@ A comprehensive security framework for AI application development, incorporating
   - Validate token expiration and signature
   - Implement refresh token rotation
   - Never trust Authorization headers alone; validate against database
+  - Use Bearer tokens in Authorization header
+  - Implement JWT with short expiration (15-60 minutes)
+  - Implement refresh tokens for long-lived access
+  - Sign JWTs with strong secrets (256-bit minimum)
+  - Validate JWT signature on every request
+  - Implement token revocation mechanism
+  - Rotate keys/secrets regularly
+  - Use HTTPS for all API calls with credentials
 
 ### [ ] Block Unauthorized Record Access
 - **Description**: Validate that users have permission to access requested data. Implement proper authorization checks.
@@ -121,12 +140,13 @@ A comprehensive security framework for AI application development, incorporating
   - Prevent account access until user re-authenticates
 
 ### [ ] Lock Accounts After Failed Logins
-- **Description**: Temporarily lock account after repeated failed login attempts to prevent brute force attacks.
+- **Description**: Slow down repeated failed login attempts to prevent brute force attacks. Prefer progressive delays over hard lockouts, which let attackers lock out legitimate users.
 - **Severity**: CRITICAL
 - **OWASP**: 07 - Identification and Authentication Failures
 - **Implementation**:
   - Lock after 5 failed attempts within 15 minutes
-  - Lock duration: 30 minutes (increases exponentially)
+  - If locking, use a short duration (30 minutes, increasing) with self-service unlock
+  - Prefer progressive delays between attempts
   - Send email notification of lockout
   - Allow unlock via email link or password reset
   - Track lockout in logs
@@ -306,8 +326,8 @@ A comprehensive security framework for AI application development, incorporating
   - Use context-aware escaping libraries
   - Never use `innerHTML` with user data (use `textContent` instead)
 
-### [ ] Sanitize Input Before Storing
-- **Description**: Remove dangerous characters and scripts from user input before storing in database.
+### [ ] Sanitize Input Before Storing (Defense in Depth Only)
+- **Description**: Remove dangerous characters and scripts from user input before storing in database. This is a secondary layer; context-aware output encoding at render time is the primary XSS defense.
 - **Severity**: CRITICAL
 - **OWASP**: 03 - Injection
 - **Implementation**:
@@ -374,7 +394,7 @@ A comprehensive security framework for AI application development, incorporating
 ## HTTP Headers & CSRF Protection
 
 ### [ ] Add Security Headers
-- **Description**: Set Content-Security-Policy, X-Frame-Options, X-Content-Type-Options, Strict-Transport-Security, X-XSS-Protection.
+- **Description**: Set Content-Security-Policy, X-Frame-Options, X-Content-Type-Options, Strict-Transport-Security.
 - **Severity**: CRITICAL
 - **OWASP**: 01 - Broken Access Control
 - **Implementation**:
@@ -383,7 +403,6 @@ A comprehensive security framework for AI application development, incorporating
   X-Frame-Options: DENY
   X-Content-Type-Options: nosniff
   Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
-  X-XSS-Protection: 1; mode=block
   Referrer-Policy: strict-origin-when-cross-origin
   Permissions-Policy: geolocation=(), microphone=(), camera=()
   ```
@@ -392,6 +411,7 @@ A comprehensive security framework for AI application development, incorporating
   - X-Content-Type-Options prevents MIME sniffing
   - HSTS enforces HTTPS with preload
   - Test headers with security scanners
+  - X-XSS-Protection is deprecated and omitted; rely on a strict Content-Security-Policy instead
 
 ### [ ] Add HSTS (HTTP Strict-Transport-Security)
 - **Description**: Force HTTPS by telling browsers to always use secure connections to your domain.
@@ -480,7 +500,7 @@ A comprehensive security framework for AI application development, incorporating
 - **Implementation**:
   - Never use `pickle.loads()` on user data (Python)
   - Never use `eval()` or `exec()` on user input
-  - Never use `Object.freeze()` on untrusted objects
+  - Object.freeze() does not make untrusted data safe; validate it instead
   - Use JSON.parse() instead of eval() for JSON
   - Use safe YAML parsing libraries
   - Validate deserialized objects before use
@@ -536,24 +556,18 @@ A comprehensive security framework for AI application development, incorporating
 ### [ ] Validate and Sanitize AI Model Inputs (Prompt Injection Prevention)
 - **Description**: Treat user prompts as untrusted input. Sanitize, validate, and use system prompts to define boundaries.
 - **Severity**: CRITICAL
-- **AI Risk**: HIGH
+- **AI Risk Level**: HIGH
 - **Implementation**:
   - Define strict system prompts that override user instructions
   - Implement input length limits for prompts (e.g., 10,000 characters)
   - Filter for known attack patterns (jailbreak attempts)
-  - Block prompt injection keywords: "ignore", "system prompt", "forget", "forget instructions"
+  - Keyword blocklists (e.g., "ignore", "forget") are easy to bypass and block legitimate text; use them only as one weak layer
   - Log all model inputs and outputs for auditing
   - Implement prompt templates to control structure
   - Use role-based constraints in system prompts
   - Test with adversarial prompts (jailbreak attempts)
   - Monitor for model behavior changes
   - Implement input sanitization before sending to model
-
-### [ ] Block Prompt Injection Attacks
-- **Description**: Implement multiple layers of defense against prompt injection and jailbreak attempts.
-- **Severity**: CRITICAL
-- **AI Risk**: CRITICAL
-- **Implementation**:
   - Create whitelist of allowed instruction patterns
   - Monitor for attempts to change model behavior
   - Detect and block commands that override system prompts
@@ -568,7 +582,7 @@ A comprehensive security framework for AI application development, incorporating
 ### [ ] Cap AI Usage and Implement Request Limits
 - **Description**: Limit total tokens, API calls, and model usage per user/organization to prevent abuse.
 - **Severity**: HIGH
-- **AI Risk**: HIGH
+- **AI Risk Level**: HIGH
 - **Implementation**:
   - Set daily token limits per user (e.g., 100,000 tokens/day)
   - Set monthly token limits per organization
@@ -580,6 +594,14 @@ A comprehensive security framework for AI application development, incorporating
   - Stop processing at 100% usage
   - Implement upgrade prompts for users reaching limits
   - Monitor unusual usage patterns
+  - Limit API calls per user per hour/day
+  - Limit total tokens per user per billing period
+  - Implement cost-based rate limiting
+  - Monitor for unusual usage patterns
+  - Set per-request timeouts
+  - Queue requests with priority levels
+  - Implement backoff and retry logic
+  - Alert on quota violations
 
 ### [ ] Limit Request Size and Prevent Resource Exhaustion
 - **Description**: Prevent large requests that could cause DoS or resource exhaustion.
@@ -599,7 +621,7 @@ A comprehensive security framework for AI application development, incorporating
 ### [ ] Implement Output Guardrails for AI Responses
 - **Description**: Filter AI model outputs for malicious content, PII, or policy violations before returning to users.
 - **Severity**: CRITICAL
-- **AI Risk**: HIGH
+- **AI Risk Level**: HIGH
 - **Implementation**:
   - Scan outputs for PII (credit cards, SSNs, emails)
   - Detect harmful content (violence, illegal advice, hate speech)
@@ -609,26 +631,6 @@ A comprehensive security framework for AI application development, incorporating
   - Log suspicious outputs for review
   - Implement human-in-the-loop review for high-risk outputs
   - Set guardrails in model parameters if available
-
-### [ ] Limit Model Access and Rate-Limit API Calls
-- **Description**: Implement per-user/IP rate limits and token quotas. Prevent abuse of model APIs.
-- **Severity**: HIGH
-- **AI Risk**: HIGH
-- **Implementation**:
-  - Limit API calls per user per hour/day
-  - Limit total tokens per user per billing period
-  - Implement cost-based rate limiting
-  - Monitor for unusual usage patterns
-  - Set per-request timeouts
-  - Queue requests with priority levels
-  - Implement backoff and retry logic
-  - Alert on quota violations
-
-### [ ] Monitor for Data Leakage in Model Training/Responses
-- **Description**: Log model interactions. Check for PII, secrets, or training data being leaked in outputs.
-- **Severity**: HIGH
-- **AI Risk**: HIGH
-- **Implementation**:
   - Log all model interactions (input, output, user, timestamp)
   - Implement automated PII detection in responses
   - Check for exposure of API keys or secrets
@@ -637,20 +639,6 @@ A comprehensive security framework for AI application development, incorporating
   - Set retention policies for logs
   - Implement data redaction for sensitive logs
   - Use pattern matching to detect duplicated training data
-
-### [ ] Adversarial Input Testing for AI Models
-- **Description**: Test edge cases, jailbreak attempts, and adversarial prompts. Understand model failure modes.
-- **Severity**: HIGH
-- **AI Risk**: HIGH
-- **Implementation**:
-  - Create test suite of adversarial prompts
-  - Test jailbreak attempts (e.g., "roleplay as system", "ignore instructions")
-  - Test prompt injection attacks
-  - Test for bias and stereotype generation
-  - Test extreme/unusual inputs
-  - Document model limitations and failure modes
-  - Implement feature flags for new features
-  - Beta test with limited users before release
 
 ---
 
@@ -756,20 +744,6 @@ A comprehensive security framework for AI application development, incorporating
   - Monitor usage of deprecated endpoints
   - Remove only unused deprecated endpoints
 
-### [ ] Use API Keys and Token-Based Authentication
-- **Description**: Implement OAuth2, JWT, or API key authentication. Rotate keys regularly. Never embed in code.
-- **Severity**: CRITICAL
-- **OWASP**: 02 - Cryptographic Failures
-- **Implementation**:
-  - Use Bearer tokens in Authorization header
-  - Implement JWT with short expiration (15-60 minutes)
-  - Implement refresh tokens for long-lived access
-  - Sign JWTs with strong secrets (256-bit minimum)
-  - Validate JWT signature on every request
-  - Implement token revocation mechanism
-  - Rotate keys/secrets regularly
-  - Use HTTPS for all API calls with credentials
-
 ---
 
 ## OWASP Top 10 Coverage
@@ -793,7 +767,7 @@ A comprehensive security framework for AI application development, incorporating
   - [ ] Encrypt sensitive data at rest
   - [ ] Force HTTPS / TLS encryption in transit
   - [ ] Hash passwords with strong algorithms
-  - [ ] Use API keys and token-based authentication
+  - [ ] Enforce server-side authentication
 
 ### [ ] OWASP-03: Injection
 - **Description**: Use parameterized queries, validate all input, escape output, use ORMs where possible.
@@ -859,123 +833,33 @@ A comprehensive security framework for AI application development, incorporating
 
 ---
 
-## Additional Security Considerations
+## OWASP LLM Top 10 2026 Mapping
 
-### Common Vulnerabilities Beyond OWASP Top 10
+> **Note (v1.2)**: The OWASP Top 10 for LLM Applications 2026 (released August 2026) reordered several risks. Excessive Agency rose to #3 and Unbounded Consumption rose significantly. System Prompt Leakage was expanded and renamed Hidden Context Exposure. Always cite the year with the ID (e.g., LLM03:2026).
 
-- **XXE (XML External Entity)**: Never parse untrusted XML with external entity resolution enabled
-- **Race Conditions**: Use database transactions for atomic operations
-- **Timing Attacks**: Use constant-time comparisons for sensitive operations
-- **Directory Traversal**: Validate file paths, prevent `../` in uploads
-- **Open Redirects**: Validate redirect URLs, use whitelists
-- **Insecure Randomness**: Use cryptographically secure random number generators
-- **Weak Password Reset**: Use secure tokens, short expiration times, one-time use
-- **Account Enumeration**: Don't reveal whether username/email exists
-- **Security Headers Missing**: Implement all major security headers
-- **Outdated Frameworks**: Keep frameworks and libraries updated
+| 2026 ID | Risk | Previous (2025) | Priority Guidance |
+|---------|------|-----------------|-------------------|
+| LLM01:2026 | Prompt Injection | LLM01 | Still #1 – highest priority |
+| LLM02:2026 | Sensitive Information Disclosure | LLM02 | Still #2 |
+| LLM03:2026 | **Excessive Agency** | LLM06 | **Rose significantly** – treat as critical for agentic systems |
+| LLM04:2026 | Supply Chain | LLM03 | Includes model/artifact trust |
+| LLM05:2026 | Data and Model Poisoning | LLM04 | Absorbs fine-tuning subversion |
+| LLM06:2026 | **Unbounded Consumption** | LLM10 | **Rose significantly** – cost & resource attacks |
+| LLM07:2026 | Misinformation | LLM09 | Higher ranking based on incidents |
+| LLM08:2026 | **Hidden Context Exposure** | LLM07 (System Prompt Leakage) | Expanded scope beyond system prompt |
+| LLM09:2026 | Vector and Embedding Weaknesses | LLM08 | Tenant isolation critical |
+| LLM10:2026 | Improper Output Handling | LLM05 | Includes ANSI/terminal sinks |
 
-### Security Testing
-
-- **Static Analysis**: Use SAST tools (SonarQube, Veracode, CodeQL)
-- **Dynamic Analysis**: Use DAST tools (Burp Suite, OWASP ZAP)
-- **Dependency Scanning**: Use Snyk, npm audit, pip check
-- **Container Scanning**: Scan Docker images for vulnerabilities
-- **Penetration Testing**: Hire professional pen testers annually
-- **Security Audits**: Review code and architecture regularly
-- **Bug Bounty Programs**: Consider running bug bounty for critical apps
-
-### Compliance & Standards
-
-- **GDPR**: Encrypt PII, implement data deletion, get user consent
-- **HIPAA**: Encrypt health data, implement audit trails
-- **PCI-DSS**: Secure payment data handling
-- **SOC 2**: Implement logging, monitoring, incident response
-- **ISO 27001**: Implement information security management system
+**Key implication for scanning**: Elevate testing and controls for **Excessive Agency** and **Unbounded Consumption**. Pair this list with the OWASP Top 10 for Agentic Applications 2026 when agents, tools, or multi-step workflows are present.
 
 ---
-
-## Implementation Priority
-
-### Phase 1: Critical (Implement First)
-- Authentication & Access Control
-- Data Protection & Encryption
-- Database Security
-- HTTPS/TLS
-- API Key Management
-
-### Phase 2: High (Implement Next)
-- HTTP Security Headers
-- Rate Limiting
-- Logging & Monitoring
-- Input Validation
-- CSRF Protection
-
-### Phase 3: Enhanced (Ongoing)
-- Dependency Scanning
-- Vulnerability Assessment
-- Incident Response
-- Security Audits
-- Penetration Testing
-
----
-
-## Checklist Usage
-
-This checklist should be:
-1. **Reviewed** before starting development
-2. **Implemented** during development
-3. **Tested** before deployment
-4. **Audited** regularly (quarterly or after incidents)
-5. **Updated** as new vulnerabilities are discovered
-
-Track completion status and maintain this checklist as part of your security governance process.
-
----
-
-## References
-
-- **OWASP Top 10 2021**: https://owasp.org/Top10/
-- **OWASP Testing Guide**: https://owasp.org/www-project-web-security-testing-guide/
-- **NIST Cybersecurity Framework**: https://www.nist.gov/cyberframework
-- **CWE Top 25**: https://cwe.mitre.org/top25/
-- **SANS Top 25**: https://www.sans.org/top25-software-errors/
-
----
-
-**Last Updated**: August 15, 2026  
-**Version**: 1.1  
-**Maintainer**: Security Team
-
----
-
-## Latest Additions (v1.1)
-
-New critical items added from additional security requirements:
-
-- **Reset Sessions on Password Change** - Force re-authentication after password updates
-- **Lock Accounts After Failed Logins** - Automatic account lockout to prevent brute force
-- **Expire Password Reset Links** - Time-limited, single-use password reset tokens
-- **Prevent User Enumeration** - Generic error messages to prevent account discovery
-- **Verify Payment Webhooks** - HMAC signature validation and replay attack prevention
-- **Set Prices Server-Side** - Never trust client-side pricing information
-- **Add HSTS** - HTTP Strict-Transport-Security for browser-enforced HTTPS
-- **Block Prompt Injection** - Multi-layer defense against AI model prompt injection attacks
-- **Cap AI Usage** - Token limits and quota management per user/organization
-- **Limit Request Size** - Prevent DoS through oversized requests
-- **Rate Limit Password Reset** - Prevent abuse of password reset functionality
-- **Sanitize Input Before Storing** - Remove malicious content from database storage
-- **Lock Down CORS** - Strict cross-origin request policy
-- **Disable Directory Listing** - Prevent directory enumeration
-- **Remove Default Admin Routes** - Secure or eliminate default endpoints
-- **Restrict Database Permissions** - Granular role-based access control
-
 
 ## Section A: AI Attack Testing & AI-Specific Controls
 
 ### [ ] Run Automated LLM Vulnerability Scans
 - **Description**: Probe AI endpoints with known attack suites before every release and after every prompt or model change.
 - **Severity**: CRITICAL
-- **AI Risk**: LLM01 Prompt Injection, LLM07 System Prompt Leakage
+- **OWASP LLM Ref**: LLM01 Prompt Injection, LLM08:2026 Hidden Context Exposure
 - **Implementation**:
   - Use garak for probe-based scanning (encoding tricks, jailbreak templates, leakage probes)
   - Use PyRIT (Microsoft) for orchestrated multi-turn attacks
@@ -986,7 +870,7 @@ New critical items added from additional security requirements:
 ### [ ] Test Indirect Prompt Injection
 - **Description**: Attacker-controlled content (web pages, emails, PDFs, RAG documents, tool outputs) may contain instructions the model follows.
 - **Severity**: CRITICAL
-- **AI Risk**: LLM01 Prompt Injection
+- **OWASP LLM Ref**: LLM01 Prompt Injection
 - **Implementation**:
   - Plant canary instructions in test documents and check whether the agent complies
   - Test every ingestion path: file uploads, URL fetches, email, calendar, tool results
@@ -997,26 +881,27 @@ New critical items added from additional security requirements:
 ### [ ] Test Multi-Turn and Escalation Jailbreaks
 - **Description**: Attacks often spread harmful intent across several turns (crescendo attacks) or use persona and role-play framing.
 - **Severity**: HIGH
-- **AI Risk**: LLM01 Prompt Injection
+- **OWASP LLM Ref**: LLM01 Prompt Injection
 - **Implementation**:
   - Script multi-turn escalation sequences and record the turn where refusal fails
   - Test role-play, hypothetical, "developer mode", and persona-swap framings
   - Re-run the suite on every model, system prompt, or guardrail change
   - Keep a versioned library of past successful jailbreaks as regression tests
 
-### [ ] Test System Prompt Extraction
-- **Description**: Check whether users can reveal system prompts through direct requests or indirect methods.
+### [ ] Test System Prompt Extraction / Hidden Context Exposure
+- **Description**: Check whether users can reveal system prompts or other hidden operational context through direct requests or indirect methods.
 - **Severity**: HIGH
-- **AI Risk**: LLM07 System Prompt Leakage
+- **OWASP LLM Ref**: LLM08:2026 Hidden Context Exposure
 - **Implementation**:
   - Test "repeat everything above", translation, summarization, encoding, and format-conversion requests
   - Never place secrets, credentials, or internal URLs in system prompts
-  - Assume every system prompt will eventually become public
+  - Assume every system prompt and hidden context will eventually become public
+  - Test extraction of tool schemas, memory contents, and retrieved context
 
 ### [ ] Test Encoding and Obfuscation Bypasses
 - **Description**: Filters often miss payloads hidden with encoding or lookalike characters.
 - **Severity**: HIGH
-- **AI Risk**: LLM01 Prompt Injection
+- **OWASP LLM Ref**: LLM01 Prompt Injection
 - **Implementation**:
   - Test base64, ROT13, leetspeak, homoglyphs (Cyrillic and Greek lookalikes), zero-width characters, Unicode tag characters, and payloads split across turns
   - Test low-resource languages and mixed-script input
@@ -1025,7 +910,7 @@ New critical items added from additional security requirements:
 ### [ ] Test Multimodal Injection
 - **Description**: Instructions can be hidden in images, PDFs, audio, or file metadata.
 - **Severity**: HIGH
-- **AI Risk**: LLM01 Prompt Injection
+- **OWASP LLM Ref**: LLM01 Prompt Injection
 - **Implementation**:
   - Test low-contrast or tiny text in images, and instructions in EXIF or other metadata
   - Test OCR-readable text inside PDFs and text spoken in audio files
@@ -1034,17 +919,18 @@ New critical items added from additional security requirements:
 ### [ ] Enforce Least-Privilege Tool Permissions
 - **Description**: Limit what an AI agent can do, since excessive tool permissions turn a prompt injection into a real action.
 - **Severity**: CRITICAL
-- **AI Risk**: LLM06 Excessive Agency
+- **OWASP LLM Ref**: LLM03:2026 Excessive Agency
 - **Implementation**:
   - Allowlist tools per task; default to read-only
   - Scope OAuth tokens narrowly and use short expiry
   - Require human approval for send, delete, pay, publish, and permission-change actions
   - Cap tool calls per turn and log every call with its arguments
+  - Run each tool under its own narrowly scoped identity (no shared long-lived keys)
 
 ### [ ] Test Tool Misuse and Parameter Tampering
 - **Description**: Check whether the agent can be steered into calling tools with other users' IDs, out-of-scope paths, or elevated flags.
 - **Severity**: HIGH
-- **AI Risk**: LLM06 Excessive Agency
+- **OWASP LLM Ref**: LLM03:2026 Excessive Agency
 - **Implementation**:
   - Attempt cross-user IDs, path traversal, and escalated parameters through the agent
   - Enforce authorization in the tool backend, never only in the prompt
@@ -1053,16 +939,17 @@ New critical items added from additional security requirements:
 ### [ ] Block Markdown and HTML Exfiltration Channels
 - **Description**: Rendered markdown can leak data when the model emits an image or link whose URL carries stolen content, for example an image tag pointing at an attacker's server with data in the query string.
 - **Severity**: CRITICAL
-- **AI Risk**: LLM02 Sensitive Information Disclosure, LLM05 Improper Output Handling
+- **OWASP LLM Ref**: LLM02 Sensitive Information Disclosure, LLM10:2026 Improper Output Handling
 - **Implementation**:
   - Do not auto-load remote images from model output, or proxy them through an allowlist
   - Restrict img-src in the Content-Security-Policy
   - Test with injected exfiltration payloads in markdown, HTML, and link formats
+  - Sanitize or block ANSI / terminal escape sequences in output
 
 ### [ ] Treat Model Output as Untrusted
 - **Description**: Model output that reaches an interpreter or a sink can cause injection in downstream systems.
 - **Severity**: CRITICAL
-- **AI Risk**: LLM05 Improper Output Handling
+- **OWASP LLM Ref**: LLM10:2026 Improper Output Handling
 - **Implementation**:
   - Never pass model output to eval, exec, shell commands, or innerHTML
   - Parameterize any SQL the model generates, or restrict it to read-only query templates
@@ -1071,7 +958,7 @@ New critical items added from additional security requirements:
 ### [ ] Sandbox Code Execution Tools
 - **Description**: Code the agent runs must not reach secrets, the internal network, or the host.
 - **Severity**: CRITICAL
-- **AI Risk**: LLM05 Improper Output Handling, LLM06 Excessive Agency
+- **OWASP LLM Ref**: LLM10:2026 Improper Output Handling, LLM03:2026 Excessive Agency
 - **Implementation**:
   - Run code in ephemeral containers or microVMs
   - Block network egress by default; allow specific hosts only when needed
@@ -1082,7 +969,7 @@ New critical items added from additional security requirements:
 ### [ ] Test for Sensitive Information Disclosure
 - **Description**: Check whether the model reveals PII, secrets, or other users' data.
 - **Severity**: HIGH
-- **AI Risk**: LLM02 Sensitive Information Disclosure
+- **OWASP LLM Ref**: LLM02 Sensitive Information Disclosure
 - **Implementation**:
   - Seed a test corpus with canary secrets and fake PII, then probe for them
   - Test cross-user leakage with two accounts
@@ -1091,7 +978,7 @@ New critical items added from additional security requirements:
 ### [ ] Enforce Tenant Isolation in RAG and Vector Stores
 - **Description**: Similarity search without a server-enforced tenant filter returns other tenants' chunks.
 - **Severity**: CRITICAL
-- **AI Risk**: LLM08 Vector and Embedding Weaknesses
+- **OWASP LLM Ref**: LLM09:2026 Vector and Embedding Weaknesses
 - **Implementation**:
   - Bind the tenant filter on the server; never take it from the client
   - Test queries from tenant A that should not return tenant B chunks
@@ -1101,7 +988,7 @@ New critical items added from additional security requirements:
 ### [ ] Protect Against RAG and Training Data Poisoning
 - **Description**: Malicious or false documents in the knowledge base or training set can change model behavior.
 - **Severity**: HIGH
-- **AI Risk**: LLM04 Data and Model Poisoning
+- **OWASP LLM Ref**: LLM05:2026 Data and Model Poisoning
 - **Implementation**:
   - Record provenance for every ingested document
   - Review new sources before they enter the index
@@ -1111,38 +998,41 @@ New critical items added from additional security requirements:
 ### [ ] Verify AI Model and Dependency Supply Chain
 - **Description**: Model files and model-loading code can execute attacker code.
 - **Severity**: HIGH
-- **AI Risk**: LLM03 Supply Chain
+- **OWASP LLM Ref**: LLM04:2026 Supply Chain
 - **Implementation**:
   - Prefer safetensors over pickle-based formats; never unpickle untrusted model files
   - Pin model revisions by commit hash and verify checksums or signatures
   - Scan model files with modelscan or similar tools
   - Record models and datasets in an AI bill of materials (AI-BOM)
+  - Maintain an isolated intake pipeline for new models/datasets before production use
 
 ### [ ] Validate MCP and Third-Party Tool Servers
 - **Description**: Tool descriptions and outputs from external servers can carry hidden instructions (tool poisoning) or shadow trusted tools with the same name.
 - **Severity**: CRITICAL
-- **AI Risk**: LLM01 Prompt Injection, LLM03 Supply Chain
+- **OWASP LLM Ref**: LLM01 Prompt Injection, LLM04:2026 Supply Chain
 - **Implementation**:
   - Pin server versions and tool definitions; alert when a description changes
   - Review tool descriptions for hidden instructions before approval
   - Namespace tools to prevent shadowing
   - Give each server its own least-privilege credentials
   - Allowlist approved servers only
+  - Strip or sanitize tool descriptions and MCP metadata before use
 
 ### [ ] Limit Unbounded Consumption and Agent Loops
-- **Description**: Agents can loop, recurse, or run up costs through long inputs.
+- **Description**: Agents can loop, recurse, or run up costs through long inputs. Limits must be enforced in code, not only in prompts.
 - **Severity**: HIGH
-- **AI Risk**: LLM10 Unbounded Consumption
+- **OWASP LLM Ref**: LLM06:2026 Unbounded Consumption
 - **Implementation**:
-  - Set maximum steps, recursion depth, tokens, and wall-clock time per run
+  - Set maximum steps, recursion depth, tokens, and wall-clock time per run **in code**
   - Detect repeated identical tool calls and stop them
   - Alert on per-key spend spikes
   - Test "denial of wallet" cases: very long inputs and forced loops
+  - Enforce hard cost ceilings that cannot be overridden by the model
 
 ### [ ] Test for Model Extraction and Distillation
 - **Description**: Systematic querying can copy model behavior.
 - **Severity**: MEDIUM
-- **AI Risk**: LLM10 Unbounded Consumption (model theft)
+- **OWASP LLM Ref**: LLM06:2026 Unbounded Consumption (model theft)
 - **Implementation**:
   - Detect templated, high-volume, or coverage-style query patterns
   - Throttle per account; do not expose logprobs unless required
@@ -1151,7 +1041,7 @@ New critical items added from additional security requirements:
 ### [ ] Test for Training Data Extraction and Membership Inference
 - **Description**: Fine-tuned models can regurgitate training records.
 - **Severity**: MEDIUM
-- **AI Risk**: LLM02 Sensitive Information Disclosure
+- **OWASP LLM Ref**: LLM02 Sensitive Information Disclosure
 - **Implementation**:
   - Run prefix-completion probes against fine-tuned models
   - Deduplicate and scrub PII before fine-tuning
@@ -1160,7 +1050,7 @@ New critical items added from additional security requirements:
 ### [ ] Prevent Cross-User Leakage Through Caches
 - **Description**: Prompt caches, semantic caches, and response caches keyed without user or tenant context can return one user's answer to another.
 - **Severity**: CRITICAL
-- **AI Risk**: LLM02 Sensitive Information Disclosure
+- **OWASP LLM Ref**: LLM02 Sensitive Information Disclosure
 - **Implementation**:
   - Include tenant and permission scope in every cache key
   - Tune and test semantic-cache similarity thresholds
@@ -1170,7 +1060,7 @@ New critical items added from additional security requirements:
 ### [ ] Measure Hallucination and Groundedness
 - **Description**: Unsupported answers can cause harm when users rely on them.
 - **Severity**: HIGH
-- **AI Risk**: LLM09 Misinformation
+- **OWASP LLM Ref**: LLM07:2026 Misinformation
 - **Implementation**:
   - Score faithfulness against retrieved sources (RAGAS or similar)
   - Require citations that link to verifiable sources
@@ -1179,7 +1069,7 @@ New critical items added from additional security requirements:
 ### [ ] Test Guardrail Classifiers Themselves
 - **Description**: Input and output filters can be bypassed or can block legitimate use.
 - **Severity**: HIGH
-- **AI Risk**: LLM01 Prompt Injection
+- **OWASP LLM Ref**: LLM01 Prompt Injection
 - **Implementation**:
   - Run known bypass sets against input and output filters (Llama Guard, NeMo Guardrails, LLM Guard, or Lakera Guard)
   - Measure false-negative and false-positive rates
@@ -1188,25 +1078,26 @@ New critical items added from additional security requirements:
 ### [ ] Pin and Regression-Test Model Versions
 - **Description**: A model upgrade can silently change safety and security behavior.
 - **Severity**: HIGH
-- **AI Risk**: LLM09 Misinformation
+- **OWASP LLM Ref**: LLM07:2026 Misinformation, LLM04:2026 Supply Chain
 - **Implementation**:
   - Pin the exact model ID in production
   - Re-run security and safety evals before every upgrade
   - Roll out with canaries and keep a tested rollback path
 
 ### [ ] Require Human Approval for High-Risk AI Actions
-- **Description**: Consequential actions should not depend on the model's judgment alone.
+- **Description**: Consequential actions should not depend on the model's judgment alone. Approvals must be enforced outside the model.
 - **Severity**: CRITICAL
-- **AI Risk**: LLM06 Excessive Agency
+- **OWASP LLM Ref**: LLM03:2026 Excessive Agency
 - **Implementation**:
   - Gate payments, deletions, external messages, permission changes, and production deploys
   - Show the exact action and parameters to the approver
   - Use time-limited approvals and log the approver's identity
+  - Ensure the approval gate cannot be bypassed by prompt injection or tool output
 
 ### [ ] Secure Persistent Agent Memory
 - **Description**: Stored memories can hold injected instructions that fire in later sessions.
 - **Severity**: HIGH
-- **AI Risk**: LLM01 Prompt Injection
+- **OWASP LLM Ref**: LLM01 Prompt Injection
 - **Implementation**:
   - Scope memory to a single user
   - Sanitize or review content before it is stored
@@ -1216,10 +1107,41 @@ New critical items added from additional security requirements:
 ### [ ] Detect Anomalous AI Usage
 - **Description**: Attack attempts often show up as unusual patterns before they succeed.
 - **Severity**: MEDIUM
-- **AI Risk**: LLM01 Prompt Injection, LLM10 Unbounded Consumption
+- **OWASP LLM Ref**: LLM01 Prompt Injection, LLM06:2026 Unbounded Consumption
 - **Implementation**:
   - Alert on spikes in refusals, tool calls, prompt length, and jailbreak-like phrasing
-  - Keep per-key baselines and flag deviations
+  - Keep per-key / per-tenant baselines and flag deviations
+  - Monitor for sudden increases in canary or secret leakage probes
+
+### [ ] Prevent Agent Goal Hijacking / Goal Drift
+- **Description**: An agent’s high-level goal or plan must not be permanently altered by injected content.
+- **Severity**: CRITICAL
+- **OWASP LLM Ref**: LLM03:2026 Excessive Agency (Agentic)
+- **Implementation**:
+  - Separate immutable system goals from mutable task context
+  - Test multi-turn attempts to rewrite the agent’s objective
+  - Re-validate the active goal against the original system intent on every high-risk step
+  - Log goal changes and require human confirmation for persistent goal updates
+
+### [ ] Secure Inter-Agent Communication
+- **Description**: Messages between agents must be authenticated, authorized, and integrity-protected.
+- **Severity**: HIGH
+- **OWASP LLM Ref**: LLM03:2026 Excessive Agency (multi-agent)
+- **Implementation**:
+  - Authenticate and authorize every inter-agent message
+  - Use signed or encrypted channels where agents cross trust boundaries
+  - Validate message schemas and reject unexpected tool or goal instructions from peer agents
+  - Apply least privilege to what one agent can request of another
+
+### [ ] Enforce Agent Identity Isolation
+- **Description**: Each agent and tool must run under its own narrowly scoped identity; never share long-lived credentials.
+- **Severity**: CRITICAL
+- **OWASP LLM Ref**: LLM03:2026 Excessive Agency, LLM04:2026 Supply Chain
+- **Implementation**:
+  - Issue short-lived, scoped credentials per agent/tool
+  - Never reuse a single API key across multiple agents or tools
+  - Rotate and revoke agent identities on a schedule and after incidents
+  - Log the identity used for every tool call
 
 ---
 
@@ -1405,14 +1327,6 @@ New critical items added from additional security requirements:
   - Opt out of provider training where available
   - Set retention limits for prompts and logs; include vector stores and caches in deletion requests
 
-### [ ] Plan Backup, Recovery, and Ransomware Resilience
-- **Description**: Recovery must cover data, vector indexes, and configuration.
-- **Severity**: HIGH
-- **Implementation**:
-  - Follow the 3-2-1 backup rule with immutable or offline copies
-  - Test restores quarterly; define RTO and RPO
-  - Include vector databases, prompts, and model configuration
-
 ### [ ] Publish a Vulnerability Disclosure Policy
 - **Description**: Give researchers a clear way to report issues.
 - **Severity**: RECOMMENDED
@@ -1434,7 +1348,7 @@ New critical items added from additional security requirements:
 | Dependencies and containers | Trivy, Grype, Snyk, Dependabot |
 | Secrets scanning | gitleaks, trufflehog |
 | Model file scanning | modelscan |
-| Threat frameworks | OWASP Top 10 for LLM Applications (2025), MITRE ATLAS, NIST AI RMF, NIST AI 600-1 (Generative AI Profile) |
+| Threat frameworks | OWASP Top 10 for LLM Applications (2026), OWASP Top 10 for Agentic Applications (2026), MITRE ATLAS, NIST AI RMF, NIST AI 600-1 (Generative AI Profile) |
 
 ---
 
@@ -1449,6 +1363,7 @@ New critical items added from additional security requirements:
   - Use STRIDE or a similar method for each new feature and integration
   - Record data flows, trust boundaries, and entry points
   - Re-run the model when architecture changes
+  - Explicitly model agent goals, tool permissions, and memory surfaces
 
 ### [ ] Run Secure Coding Training and Security Champions
 - **Description**: Build security knowledge across engineering teams.
@@ -1638,6 +1553,9 @@ New critical items added from additional security requirements:
 - **Implementation**:
   - Encrypt all backups with keys held separately from the backup store
   - Restore from backups on a schedule and record the results
+  - Follow the 3-2-1 backup rule with immutable or offline copies
+  - Test restores quarterly; define RTO and RPO
+  - Include vector databases, prompts, and model configuration
 
 ### [ ] Keep PII Out of Logs, Analytics, and Error Reports
 - **Description**: Logs and analytics tools are often widely accessible and poorly protected.
@@ -1734,3 +1652,139 @@ New critical items added from additional security requirements:
 - Re-run the jailbreak and injection regression suite after every model or prompt change
 - Hold a manual AI red-team exercise each quarter, covering agents, RAG, and MCP tools
 - Map findings to MITRE ATLAS techniques and track them in the same backlog as other security issues
+- Explicitly test goal hijacking, inter-agent trust boundaries, and persistent memory injection
+- Maintain a versioned library of successful attacks as regression tests
+
+---
+
+## Scanning Playbook & Release Gates
+
+### Recommended Scanning Order
+1. **Automated baseline** — dependency scan, secrets scan, SAST, container/IaC scan
+2. **AI automated probes** — garak / promptfoo / PyRIT against staging endpoints
+3. **Access-control & IDOR checks** — conversation IDs, share links, RAG tenant isolation
+4. **Agent & tool testing** — least-privilege, parameter tampering, human-approval gates, step limits
+5. **Output handling** — markdown/HTML/ANSI exfiltration, schema validation of structured output
+6. **Manual red-team focus** — multi-turn jailbreaks, indirect injection via documents/tools, goal hijacking
+7. **Governance evidence** — threat model updated, AI-BOM current, model version pinned, retention rules applied
+
+### Release Gate (Must be Green)
+- All **CRITICAL** items in Authentication, Data Protection, Database Security, and AI-Specific sections
+- LLM01, LLM02, LLM03:2026 (Excessive Agency), LLM06:2026 (Unbounded Consumption), and LLM10:2026 controls verified
+- Automated AI vulnerability scan pass rate meets agreed threshold
+- Model and prompt versions pinned; security evals re-run after any change
+- Human-approval gates and hard step/cost limits enforced in code (not only in prompts)
+- Tenant isolation and cache isolation tests passing
+- No high-severity findings open from the latest red-team or penetration test
+
+### Priority Tags (for triage)
+- **CRITICAL** — Must be fixed before any production exposure or model change
+- **HIGH** — Required for release; may accept temporary exception with expiry and owner
+- **MEDIUM / RECOMMENDED** — Track in backlog; fix within agreed SLA
+
+---
+
+## Additional Security Considerations
+
+### Common Vulnerabilities Beyond OWASP Top 10
+
+- **XXE (XML External Entity)**: Never parse untrusted XML with external entity resolution enabled
+- **Timing Attacks**: Use constant-time comparisons for sensitive operations
+- **Directory Traversal**: Validate file paths, prevent `../` in uploads
+- **Open Redirects**: Validate redirect URLs, use whitelists
+- **Insecure Randomness**: Use cryptographically secure random number generators
+- **Outdated Frameworks**: Keep frameworks and libraries updated
+
+### Security Testing
+
+Tool recommendations are in Section C. Penetration testing, audits, and bug bounty guidance are in Section D.
+
+### Compliance & Standards
+
+Framework requirements (GDPR, HIPAA, PCI DSS, SOC 2, ISO 27001, NIST AI RMF and AI 600-1) are mapped to controls in Section D under "Compliance and Legal." Confirm which frameworks apply before relying on their controls.
+
+---
+
+## Implementation Priority
+
+### Phase 1: Critical (Implement First)
+- Authentication & Access Control
+- Data Protection & Encryption
+- Database Security
+- HTTPS/TLS
+- API Key Management
+- Core LLM01 / LLM02 / LLM03:2026 / LLM10:2026 controls
+
+### Phase 2: High (Implement Next)
+- HTTP Security Headers
+- Rate Limiting & Unbounded Consumption limits
+- Logging & Monitoring
+- Input Validation
+- CSRF Protection
+- Agent least-privilege and human-approval gates
+
+### Phase 3: Enhanced (Ongoing)
+- Dependency Scanning
+- Vulnerability Assessment
+- Incident Response
+- Security Audits
+- Penetration Testing
+- Full AI red-team program
+
+---
+
+## Checklist Usage
+
+Numeric values in this checklist (for example 100,000 tokens/day, 1000 requests/hour, 10MB body limits) are examples. Set actual values from your own capacity, cost, and risk data.
+
+This checklist should be:
+1. **Reviewed** before starting development
+2. **Implemented** during development
+3. **Tested** before deployment (use the Scanning Playbook)
+4. **Audited** regularly (quarterly or after incidents)
+5. **Updated** as new vulnerabilities and standards (OWASP LLM 2026, Agentic Top 10, ATLAS) evolve
+
+Track completion status and maintain this checklist as part of your security governance process.
+
+---
+
+## References
+
+- **OWASP Top 10 2021**: https://owasp.org/Top10/
+- **OWASP Top 10 for LLM Applications 2026**: https://genai.owasp.org/resource/owasp-genai-llm-top-10-2026/
+- **OWASP Top 10 for Agentic Applications 2026**: https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/
+- **OWASP Testing Guide**: https://owasp.org/www-project-web-security-testing-guide/
+- **NIST Cybersecurity Framework**: https://www.nist.gov/cyberframework
+- **NIST AI RMF / AI 600-1**: https://www.nist.gov/itl/ai-risk-management-framework
+- **CWE Top 25**: https://cwe.mitre.org/top25/
+- **SANS Top 25**: https://www.sans.org/top25-software-errors/
+- **MITRE ATLAS**: https://atlas.mitre.org/
+
+---
+
+**Last Updated**: November 20, 2026  
+**Version**: 1.2.2  
+**Maintainer**: Security Team
+
+### Changelog (v1.2)
+- Added full mapping to **OWASP LLM Top 10 2026** (reordered risks, renamed Hidden Context Exposure)
+- Elevated **Excessive Agency** and **Unbounded Consumption** controls
+- Added agent goal hijacking / goal drift, inter-agent communication security, and agent identity isolation
+- Strengthened model supply-chain controls (safetensors, AI-BOM, intake pipeline)
+- Added hard step/cost limits enforced in code (not only prompts)
+- Added semantic-cache tenant isolation emphasis and canary/honeytoken guidance
+- Added **Scanning Playbook & Release Gates** section for practical use when scanning applications
+- Updated references and priority guidance throughout
+
+### Changelog (v1.2.1)
+- Corrected guidance: removed Object.freeze as a deserialization control, dropped deprecated X-XSS-Protection, marked keyword blocklists as weak, replaced hard lockouts with progressive delays
+- Clarified misleading titles (database keys, input sanitization)
+- Renamed ambiguous "AI Risk" field: AI Risk Level holds severity, OWASP LLM Ref holds IDs
+- Removed legacy 2025 IDs from mixed references
+- Removed duplicated content (Security Testing list, common-vulnerability duplicates, adversarial testing item, Phase 4 subsection)
+
+### Changelog (v1.2.2)
+- Merged overlapping items: rate-limit items into Cap AI Usage; data-leakage monitoring into Output Guardrails; prompt-injection blocking into Validate and Sanitize AI Model Inputs; API token items into Enforce Server-Side Authentication; backup planning into Encrypt and Test Backups
+- Updated OWASP-02 cross-reference to the merged authentication item
+- Replaced the duplicated compliance list with a pointer to Section D
+- Labeled numeric thresholds as examples
